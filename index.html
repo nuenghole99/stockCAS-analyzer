@@ -142,6 +142,29 @@
     font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 9px; border-radius:3px; cursor:pointer;
   }
   .recent-syms button:active{border-color:var(--gold-dim); color:var(--gold);}
+
+  .tf-row{display:flex; gap:6px; margin-top:12px; flex-wrap:wrap;}
+  .tf-btn{
+    background:var(--surface); border:1px solid var(--line); color:var(--ink-dim);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; padding:6px 12px; border-radius:3px; cursor:pointer;
+  }
+  .tf-btn.active{background:var(--gold); border-color:var(--gold); color:#fff; font-weight:600;}
+
+  .pattern-list{display:flex; flex-direction:column; gap:10px;}
+  .pattern-item{
+    display:flex; gap:10px; padding:12px; border:1px solid var(--line); border-radius:4px; background:var(--surface);
+  }
+  .pattern-tag{
+    flex-shrink:0; width:64px; height:22px; border-radius:3px; font-size:10px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace;
+    text-transform:uppercase; letter-spacing:.02em;
+  }
+  .pattern-tag.bull{background:rgba(31,125,108,0.14); color:var(--teal);}
+  .pattern-tag.bear{background:rgba(175,63,42,0.14); color:var(--rust);}
+  .pattern-tag.neutral{background:var(--surface-2); color:var(--ink-dim);}
+  .pattern-body b{display:block; font-size:13.5px; margin-bottom:3px;}
+  .pattern-body p{margin:0; font-size:13px; line-height:1.6; color:var(--ink-dim);}
+  .pattern-empty{font-size:13px; color:var(--ink-faint); padding:8px 2px;}
 </style>
 </head>
 <body>
@@ -154,6 +177,7 @@
     <button class="go-btn" id="goBtn">ดูกราฟ</button>
     <button class="gear-btn" id="gearBtn">⚙</button>
   </div>
+  <div class="tf-row" id="tfRow"></div>
   <div class="recent-syms" id="recentSyms"></div>
   <div class="settings-panel" id="settingsPanel">
     <label>Twelve Data API Key</label>
@@ -184,6 +208,9 @@
 
     <div class="metric-grid" id="metricGrid"></div>
 
+    <div class="section-title">รูปแบบที่ตรวจพบ</div>
+    <div class="pattern-list" id="patternArea"></div>
+
     <div class="section-title">สิ่งที่เห็นในกราฟ</div>
     <div class="analysis-card"><p id="obsText"></p></div>
 
@@ -204,6 +231,28 @@
 const RECENTS_KEY = 'analyzer_recents_v1';
 const APIKEY_KEY = 'analyzer_apikey_v1';
 let chart, candleSeries, ema10Series, ema20Series, ema50Series;
+
+const TIMEFRAMES = [
+  { key:'15min', label:'15 นาที', interval:'15min', outputsize:260, periodTh:'ในช่วงข้อมูลล่าสุด' },
+  { key:'1h',    label:'1 ชม.',   interval:'1h',    outputsize:260, periodTh:'ในช่วงข้อมูลล่าสุด' },
+  { key:'1day',  label:'รายวัน',  interval:'1day',  outputsize:260, periodTh:'ในรอบปีที่ผ่านมา' },
+  { key:'1week', label:'รายสัปดาห์', interval:'1week', outputsize:208, periodTh:'ในรอบหลายปีที่ผ่านมา' },
+  { key:'1month',label:'รายเดือน', interval:'1month', outputsize:180, periodTh:'ในระยะยาวที่ดึงข้อมูลมา' },
+];
+let currentTF = TIMEFRAMES[2]; // default: รายวัน
+
+function renderTfButtons(){
+  const el = document.getElementById('tfRow');
+  el.innerHTML = TIMEFRAMES.map(tf=>`<button class="tf-btn ${tf.key===currentTF.key?'active':''}" data-tf="${tf.key}">${tf.label}</button>`).join('');
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      currentTF = TIMEFRAMES.find(t=>t.key===b.dataset.tf);
+      renderTfButtons();
+      const sym = document.getElementById('tickerInput').value;
+      if(sym.trim()) runAnalysis(sym);
+    });
+  });
+}
 
 function initChart(){
   const el = document.getElementById('chart');
@@ -275,13 +324,15 @@ function setStatus(msg, isError){
   document.getElementById('resultArea').style.display = 'none';
 }
 
-async function fetchSeries(symbol, apiKey){
-  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=1day&outputsize=260&apikey=${apiKey}`;
+async function fetchSeries(symbol, apiKey, tf){
+  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${tf.interval}&outputsize=${tf.outputsize}&apikey=${apiKey}`;
   const res = await fetch(url);
   const json = await res.json();
-  if(json.status === 'error' || !json.values) throw new Error(json.message || 'หาสัญลักษณ์นี้ไม่พบ');
+  if(json.status === 'error' || !json.values) throw new Error(json.message || 'หาสัญลักษณ์นี้ไม่พบ หรือช่วงเวลานี้ไม่มีข้อมูล');
+  const isIntraday = tf.interval.indexOf('min') !== -1 || tf.interval.indexOf('h') !== -1;
   return json.values.slice().reverse().map(v=>({
-    time: v.datetime,
+    time: isIntraday ? Math.floor(new Date(v.datetime.replace(' ','T')+'Z').getTime()/1000) : v.datetime,
+    displayTime: v.datetime,
     open: parseFloat(v.open), high: parseFloat(v.high), low: parseFloat(v.low), close: parseFloat(v.close),
     volume: parseFloat(v.volume || 0)
   }));
@@ -289,7 +340,7 @@ async function fetchSeries(symbol, apiKey){
 
 function pct(a,b){ return ((a-b)/b*100); }
 
-function buildAnalysis(bars, symbol){
+function buildAnalysis(bars, symbol, tf){
   const closes = bars.map(b=>b.close);
   const vols = bars.map(b=>b.volume);
   const last = bars[bars.length-1];
@@ -298,9 +349,8 @@ function buildAnalysis(bars, symbol){
   const e10 = ema(closes,10), e20 = ema(closes,20), e50 = ema(closes,50);
   const lastE10 = e10[e10.length-1], lastE20 = e20[e20.length-1], lastE50 = e50[e50.length-1];
 
-  const window = bars.slice(-252);
-  const high52 = Math.max(...window.map(b=>b.high));
-  const low52 = Math.min(...window.map(b=>b.low));
+  const high52 = Math.max(...bars.map(b=>b.high));
+  const low52 = Math.min(...bars.map(b=>b.low));
   const fromHigh = pct(last.close, high52);
   const fromLow = pct(last.close, low52);
 
@@ -331,8 +381,130 @@ function buildAnalysis(bars, symbol){
   return {
     last, prev, lastE10, lastE20, lastE50, high52, low52, fromHigh, fromLow,
     volTrendUp, volTrendDown, trend, reversalUpSignal, reversalDownSignal, changePct,
-    e10, e20, e50
+    e10, e20, e50, periodTh: tf.periodTh
   };
+}
+
+function detectCandlePatterns(bars){
+  const patterns = [];
+  const n = bars.length;
+  const c0 = bars[n-1], c1 = bars[n-2], c2 = bars[n-3];
+  const body = c=>Math.abs(c.close-c.open);
+  const range = c=>c.high-c.low;
+  const upperWick = c=>c.high-Math.max(c.open,c.close);
+  const lowerWick = c=>Math.min(c.open,c.close)-c.low;
+  const isBull = c=>c.close>c.open;
+  const isBear = c=>c.close<c.open;
+
+  if(range(c0)>0 && body(c0) <= range(c0)*0.1){
+    patterns.push({name:'Doji', dir:'neutral', desc:'แท่งเทียนที่ราคาเปิดกับปิดใกล้เคียงกันมาก บ่งชี้ว่าแรงซื้อกับแรงขายสมดุลกัน ตลาดกำลังลังเล มักเป็นสัญญาณเตือนว่าเทรนด์เดิมอาจเปลี่ยนทิศ ควรรอแท่งถัดไปยืนยันก่อน'});
+  }
+
+  if(range(c0)>0 && lowerWick(c0) > body(c0)*2 && upperWick(c0) < body(c0)*0.5 && (c0.close-c0.low) > range(c0)*0.6){
+    patterns.push({name:'Hammer', dir:'bull', desc:'แท่งเทียนไส้ล่างยาว ตัวแท่งเล็กอยู่ด้านบน สื่อว่าระหว่างช่วงเวลานั้นราคาถูกกดลงแรงแต่แรงซื้อกลับเข้ามาดันราคาปิดขึ้นมาใกล้จุดสูงสุด มักเป็นสัญญาณกลับตัวเชิงบวกถ้าเกิดหลังช่วงขาลง'});
+  }
+
+  if(range(c0)>0 && upperWick(c0) > body(c0)*2 && lowerWick(c0) < body(c0)*0.5 && (c0.high-c0.close) < range(c0)*0.4){
+    const priorTrendUp = bars[n-2] && bars[n-6] ? bars[n-2].close > bars[n-6].close : false;
+    if(priorTrendUp){
+      patterns.push({name:'Shooting Star', dir:'bear', desc:'แท่งเทียนไส้บนยาว ตัวแท่งเล็กอยู่ด้านล่าง เกิดหลังราคาวิ่งขึ้นมาก่อนหน้า สื่อว่าแรงซื้อดันราคาขึ้นระหว่างช่วงแต่ถูกแรงขายกดกลับลงมาปิดใกล้จุดต่ำ มักเป็นสัญญาณเตือนว่าแรงซื้อเริ่มอ่อนกำลังลง'});
+    } else {
+      patterns.push({name:'Inverted Hammer', dir:'bull', desc:'แท่งเทียนไส้บนยาว ตัวแท่งเล็กอยู่ด้านล่าง เกิดหลังช่วงขาลง สื่อว่าเริ่มมีแรงซื้อเข้ามาทดสอบราคาสูงขึ้น แม้จะถูกกดกลับมาบ้าง แต่เป็นสัญญาณเริ่มต้นว่าแรงขายอาจเริ่มอ่อนแรง'});
+    }
+  }
+
+  const b0 = c0.close-c0.open, b1 = c1.close-c1.open;
+  if(b0>0 && b1<0 && c0.close>c1.open && c0.open<c1.close){
+    patterns.push({name:'Bullish Engulfing', dir:'bull', desc:'แท่งเทียนบวกล่าสุด มีตัวแท่งใหญ่ครอบคลุมแท่งลบก่อนหน้าทั้งแท่ง สื่อว่าแรงซื้อเข้ามาเปลี่ยนทิศทางแบบเด็ดขาด เป็นสัญญาณกลับตัวเชิงบวกที่ค่อนข้างหนักแน่น'});
+  }
+  if(b0<0 && b1>0 && c0.close<c1.open && c0.open>c1.close){
+    patterns.push({name:'Bearish Engulfing', dir:'bear', desc:'แท่งเทียนลบล่าสุด มีตัวแท่งใหญ่ครอบคลุมแท่งบวกก่อนหน้าทั้งแท่ง สื่อว่าแรงขายเข้ามาเปลี่ยนทิศทางแบบเด็ดขาด เป็นสัญญาณกลับตัวเชิงลบที่ค่อนข้างหนักแน่น'});
+  }
+
+  if(c2 && isBear(c2) && body(c2) > range(c2)*0.5 && body(c1) < range(c2)*0.3 &&
+     isBull(c0) && body(c0) > range(c2)*0.4 && c0.close > (c2.open+c2.close)/2){
+    patterns.push({name:'Morning Star', dir:'bull', desc:'รูปแบบ 3 แท่ง: แท่งลบตัวใหญ่ ตามด้วยแท่งตัวเล็กที่ลังเล แล้วปิดท้ายด้วยแท่งบวกตัวใหญ่ที่ดันราคากลับขึ้นมาเกินครึ่งของแท่งแรก เป็นสัญญาณกลับตัวเชิงบวกที่ค่อนข้างน่าเชื่อถือเมื่อเกิดท้ายขาลง'});
+  }
+  if(c2 && isBull(c2) && body(c2) > range(c2)*0.5 && body(c1) < range(c2)*0.3 &&
+     isBear(c0) && body(c0) > range(c2)*0.4 && c0.close < (c2.open+c2.close)/2){
+    patterns.push({name:'Evening Star', dir:'bear', desc:'รูปแบบ 3 แท่ง: แท่งบวกตัวใหญ่ ตามด้วยแท่งตัวเล็กที่ลังเล แล้วปิดท้ายด้วยแท่งลบตัวใหญ่ที่ดันราคากลับลงมาเกินครึ่งของแท่งแรก เป็นสัญญาณกลับตัวเชิงลบที่ค่อนข้างน่าเชื่อถือเมื่อเกิดท้ายขาขึ้น'});
+  }
+
+  return patterns;
+}
+
+function findSwings(bars, lb){
+  const highs = [], lows = [];
+  for(let i=lb;i<bars.length-lb;i++){
+    let isHigh=true, isLow=true;
+    for(let j=i-lb;j<=i+lb;j++){
+      if(j===i) continue;
+      if(bars[j].high >= bars[i].high) isHigh=false;
+      if(bars[j].low <= bars[i].low) isLow=false;
+    }
+    if(isHigh) highs.push({i, price:bars[i].high});
+    if(isLow) lows.push({i, price:bars[i].low});
+  }
+  return {highs, lows};
+}
+
+function detectStructurePatterns(bars){
+  const patterns = [];
+  const {highs, lows} = findSwings(bars, 3);
+  const lastClose = bars[bars.length-1].close;
+
+  if(highs.length>=2 && lows.length>=2){
+    const h1=highs[highs.length-2], h2=highs[highs.length-1];
+    const l1=lows[lows.length-2], l2=lows[lows.length-1];
+    if(h2.price>h1.price && l2.price>l1.price){
+      patterns.push({name:'Higher Highs & Higher Lows', dir:'bull', desc:'จุดสูงและจุดต่ำที่แกว่งล่าสุดต่างก็สูงกว่าจุดก่อนหน้า เป็นโครงสร้างคลาสสิกของแนวโน้มขาขึ้นที่ยังแข็งแรง'});
+    } else if(h2.price<h1.price && l2.price<l1.price){
+      patterns.push({name:'Lower Highs & Lower Lows', dir:'bear', desc:'จุดสูงและจุดต่ำที่แกว่งล่าสุดต่างก็ต่ำกว่าจุดก่อนหน้า เป็นโครงสร้างคลาสสิกของแนวโน้มขาลงที่ยังแข็งแรง'});
+    }
+  }
+
+  if(highs.length>=2){
+    const h1=highs[highs.length-2], h2=highs[highs.length-1];
+    const diffPct = Math.abs(h2.price-h1.price)/h1.price*100;
+    if(diffPct < 2.5){
+      const between = lows.filter(l=>l.i>h1.i && l.i<h2.i).sort((a,b)=>a.price-b.price)[0];
+      if(between && (h1.price-between.price)/h1.price*100 > 4){
+        const broken = lastClose < between.price;
+        patterns.push({name: broken?'Double Top (ยืนยันแล้ว)':'Double Top (กำลังก่อตัว)', dir:'bear',
+          desc:'ราคาขึ้นไปทำจุดสูงสองครั้งในระดับใกล้เคียงกัน คั่นกลางด้วยการย่อลงพอสมควร มักเตือนว่าแรงซื้อเริ่มหมดแรงหลังพยายามทำจุดสูงใหม่ไม่สำเร็จ'
+          + (broken?' ตอนนี้ราคาหลุดจุดต่ำระหว่างสองยอดไปแล้ว ถือว่ารูปแบบนี้ยืนยันสมบูรณ์':' ยังต้องรอราคาหลุดจุดต่ำระหว่างสองยอดเพื่อยืนยัน')});
+      }
+    }
+  }
+  if(lows.length>=2){
+    const l1=lows[lows.length-2], l2=lows[lows.length-1];
+    const diffPct = Math.abs(l2.price-l1.price)/l1.price*100;
+    if(diffPct < 2.5){
+      const between = highs.filter(h=>h.i>l1.i && h.i<l2.i).sort((a,b)=>b.price-a.price)[0];
+      if(between && (between.price-l1.price)/l1.price*100 > 4){
+        const broken = lastClose > between.price;
+        patterns.push({name: broken?'Double Bottom (ยืนยันแล้ว)':'Double Bottom (กำลังก่อตัว)', dir:'bull',
+          desc:'ราคาลงไปทำจุดต่ำสองครั้งในระดับใกล้เคียงกัน คั่นกลางด้วยการเด้งขึ้นพอสมควร มักเตือนว่าแรงขายเริ่มหมดแรงหลังพยายามทำจุดต่ำใหม่ไม่สำเร็จ'
+          + (broken?' ตอนนี้ราคาทะลุจุดสูงระหว่างสองก้นไปแล้ว ถือว่ารูปแบบนี้ยืนยันสมบูรณ์':' ยังต้องรอราคาทะลุจุดสูงระหว่างสองก้นเพื่อยืนยัน')});
+      }
+    }
+  }
+
+  return patterns;
+}
+
+function renderPatterns(patterns){
+  const el = document.getElementById('patternArea');
+  if(!patterns.length){
+    el.innerHTML = '<div class="pattern-empty">ยังไม่พบรูปแบบแท่งเทียนหรือโครงสร้างราคาที่ชัดเจนในข้อมูลล่าสุด</div>';
+    return;
+  }
+  const dirLabel = { bull:'บวก', bear:'ลบ', neutral:'กลาง' };
+  el.innerHTML = patterns.map(p=>`
+    <div class="pattern-item">
+      <div class="pattern-tag ${p.dir}">${dirLabel[p.dir]}</div>
+      <div class="pattern-body"><b>${p.name}</b><p>${p.desc}</p></div>
+    </div>`).join('');
 }
 
 function fmt(n, d){ return n.toLocaleString('en-US', {minimumFractionDigits:d===undefined?2:d, maximumFractionDigits:d===undefined?2:d}); }
@@ -342,7 +514,7 @@ function renderNarrative(a, symbol){
 
   let obs = `ราคาปิดล่าสุดของ <b>${symbol}</b> อยู่ที่ <b>${fmt(a.last.close)}</b> ดอลลาร์ `;
   obs += a.changePct >= 0 ? `บวก ${fmt(a.changePct)}% จากวันก่อน ` : `ลบ ${fmt(Math.abs(a.changePct))}% จากวันก่อน `;
-  obs += `ห่างจากจุดสูงสุดในรอบปีที่ผ่านมา (${fmt(a.high52)}) อยู่ <b>${fmt(Math.abs(a.fromHigh))}%</b>`;
+  obs += `ห่างจากจุดสูงสุด${a.periodTh} (${fmt(a.high52)}) อยู่ <b>${fmt(Math.abs(a.fromHigh))}%</b>`;
   obs += a.fromHigh < -3 ? ' ซึ่งถือว่าห่างค่อนข้างมาก ' : ' ';
   obs += `เส้นค่าเฉลี่ย <span class="term">EMA</span> ระยะสั้น-กลาง-ยาว (10/20/50 วัน) `;
   if(a.trend === 'down') obs += 'เรียงตัวแบบราคาต่ำกว่าเส้นทุกเส้น และเส้นสั้นอยู่ต่ำกว่าเส้นยาว บ่งชี้แรงขายยังควบคุมทิศทางอยู่ ';
@@ -393,8 +565,8 @@ function renderMetrics(a){
     { label:'EMA 10', value: fmt(a.lastE10) },
     { label:'EMA 20', value: fmt(a.lastE20) },
     { label:'EMA 50', value: fmt(a.lastE50) },
-    { label:'จุดสูงสุด 52 สัปดาห์', value: fmt(a.high52) },
-    { label:'จุดต่ำสุด 52 สัปดาห์', value: fmt(a.low52) },
+    { label:'จุดสูงสุดในช่วงข้อมูล', value: fmt(a.high52) },
+    { label:'จุดต่ำสุดในช่วงข้อมูล', value: fmt(a.low52) },
     { label:'ห่างจากจุดสูงสุด', value: (a.fromHigh>=0?'+':'')+fmt(a.fromHigh)+'%', cls: a.fromHigh>=0?'up':'down' },
   ];
   document.getElementById('metricGrid').innerHTML = items.map(it=>`
@@ -414,7 +586,7 @@ async function runAnalysis(symbolRaw){
   }
   setStatus(`กำลังดึงข้อมูล ${symbol}...`);
   try{
-    const bars = await fetchSeries(symbol, apiKey);
+    const bars = await fetchSeries(symbol, apiKey, currentTF);
     if(bars.length < 55) throw new Error('ข้อมูลย้อนหลังไม่พอสำหรับคำนวณ');
 
     document.getElementById('statusMsg').style.display = 'none';
@@ -437,11 +609,13 @@ async function runAnalysis(symbolRaw){
     const chgEl = document.getElementById('qChange');
     chgEl.textContent = (chg>=0?'+':'')+fmt(chg)+'%';
     chgEl.className = 'quote-change mono ' + (chg>=0?'up':'down');
-    document.getElementById('qTime').textContent = 'ข้อมูลล่าสุด: ' + last.time;
+    document.getElementById('qTime').textContent = 'ข้อมูลล่าสุด: ' + last.displayTime + ' (' + currentTF.label + ')';
 
-    const a = buildAnalysis(bars, symbol);
+    const a = buildAnalysis(bars, symbol, currentTF);
     renderMetrics(a);
     renderNarrative(a, symbol);
+    const patterns = [...detectCandlePatterns(bars), ...detectStructurePatterns(bars)];
+    renderPatterns(patterns);
     addRecent(symbol);
 
   }catch(err){
@@ -461,8 +635,9 @@ document.getElementById('apiKeyInput').addEventListener('change', e=>{
 const savedKey = localStorage.getItem(APIKEY_KEY);
 if(savedKey) document.getElementById('apiKeyInput').value = savedKey;
 else document.getElementById('settingsPanel').classList.add('open');
-
+renderTfButtons();
 renderRecents();
+
 </script>
 
 </body>
