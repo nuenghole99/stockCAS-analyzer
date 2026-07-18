@@ -9,22 +9,22 @@
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root{
-    --bg:#0f1410;
-    --surface:#171d18;
-    --surface-2:#1f2621;
-    --line:#2a332b;
-    --gold:#c9a24b;
-    --gold-dim:#8a723a;
-    --teal:#4fae9c;
-    --rust:#c1573f;
-    --ink:#e9e6db;
-    --ink-dim:#9aa397;
-    --ink-faint:#5c665c;
+    --bg:#f7f5ef;
+    --surface:#ffffff;
+    --surface-2:#efece2;
+    --line:#dbd5c4;
+    --gold:#a97c2f;
+    --gold-dim:#8a6524;
+    --teal:#1f7d6c;
+    --rust:#af3f2a;
+    --ink:#20241d;
+    --ink-dim:#63695d;
+    --ink-faint:#9a9c8d;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:radial-gradient(ellipse at top, rgba(201,162,75,0.06), transparent 55%), var(--bg);
+    background:radial-gradient(ellipse at top, rgba(169,124,47,0.06), transparent 55%), var(--bg);
     color:var(--ink);
     font-family:'Sarabun',sans-serif;
     min-height:100vh;
@@ -36,7 +36,7 @@
     padding:24px 20px 16px;
     border-bottom:1px solid var(--line);
     position:sticky; top:0; z-index:20;
-    background:rgba(15,20,16,0.95);
+    background:rgba(247,245,239,0.92);
     backdrop-filter:blur(6px);
   }
   .eyebrow{
@@ -177,9 +177,9 @@
 
     <div id="chart"></div>
     <div class="legend">
-      <div class="legend-item"><span class="legend-dot" style="background:#e0b84a"></span> EMA 10</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#4fae9c"></span> EMA 20</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#7a93c9"></span> EMA 50</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#a97c2f"></span> EMA 10</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#1f7d6c"></span> EMA 20</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#5a6fb0"></span> EMA 50</div>
     </div>
 
     <div class="metric-grid" id="metricGrid"></div>
@@ -209,19 +209,19 @@ function initChart(){
   const el = document.getElementById('chart');
   chart = LightweightCharts.createChart(el, {
     height: 340,
-    layout: { background:{color:'transparent'}, textColor:'#9aa397', fontFamily:'IBM Plex Mono, monospace', fontSize:11 },
-    grid: { vertLines:{color:'#1f2621'}, horzLines:{color:'#1f2621'} },
-    rightPriceScale:{ borderColor:'#2a332b' },
-    timeScale:{ borderColor:'#2a332b' },
+    layout: { background:{color:'transparent'}, textColor:'#63695d', fontFamily:'IBM Plex Mono, monospace', fontSize:11 },
+    grid: { vertLines:{color:'#efece2'}, horzLines:{color:'#efece2'} },
+    rightPriceScale:{ borderColor:'#dbd5c4' },
+    timeScale:{ borderColor:'#dbd5c4' },
     crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
   });
   candleSeries = chart.addCandlestickSeries({
-    upColor:'#4fae9c', downColor:'#c1573f', borderVisible:false,
-    wickUpColor:'#4fae9c', wickDownColor:'#c1573f'
+    upColor:'#1f7d6c', downColor:'#af3f2a', borderVisible:false,
+    wickUpColor:'#1f7d6c', wickDownColor:'#af3f2a'
   });
-  ema10Series = chart.addLineSeries({ color:'#e0b84a', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
-  ema20Series = chart.addLineSeries({ color:'#4fae9c', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
-  ema50Series = chart.addLineSeries({ color:'#7a93c9', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+  ema10Series = chart.addLineSeries({ color:'#a97c2f', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+  ema20Series = chart.addLineSeries({ color:'#1f7d6c', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+  ema50Series = chart.addLineSeries({ color:'#5a6fb0', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
 
   new ResizeObserver(entries=>{
     if(!entries.length) return;
