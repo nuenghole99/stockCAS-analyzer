@@ -165,6 +165,19 @@
   .pattern-body b{display:block; font-size:13.5px; margin-bottom:3px;}
   .pattern-body p{margin:0; font-size:13px; line-height:1.6; color:var(--ink-dim);}
   .pattern-empty{font-size:13px; color:var(--ink-faint); padding:8px 2px;}
+
+  .earnings-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:16px;
+  }
+  .earnings-date-box{
+    display:flex; align-items:center; gap:14px; padding:12px; border:1px solid var(--line); border-radius:4px;
+    background:var(--surface-2); margin-bottom:12px;
+  }
+  .earnings-date-box .d-num{font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:700; color:var(--gold);}
+  .earnings-date-box .d-label{font-size:11px; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace;}
+  .earnings-card p{margin:0 0 10px; font-size:13.5px; line-height:1.7; color:var(--ink-dim);}
+  .earnings-card p:last-child{margin-bottom:0;}
+  .earnings-card a{color:var(--gold);}
 </style>
 </head>
 <body>
@@ -216,6 +229,9 @@
 
     <div class="section-title">สรุปทรงกราฟ</div>
     <div class="analysis-card"><p id="summaryText"></p></div>
+
+    <div class="section-title">วันประกาศงบ & จังหวะเข้าซื้อ (ปีนี้)</div>
+    <div class="earnings-card" id="earningsCard"></div>
 
     <div class="section-title">เรื่องราคาเข้าซื้อ</div>
     <div class="analysis-card" id="entryCard"></div>
@@ -339,6 +355,74 @@ async function fetchSeries(symbol, apiKey, tf){
 }
 
 function pct(a,b){ return ((a-b)/b*100); }
+
+async function fetchNextEarnings(symbol, apiKey){
+  try{
+    const url = `https://api.twelvedata.com/earnings?symbol=${encodeURIComponent(symbol)}&period=next&apikey=${apiKey}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if(json.status === 'error' || !json.earnings || !json.earnings.length){
+      return { ok:false, reason: (json.message||'ไม่มีข้อมูล') };
+    }
+    return { ok:true, date: json.earnings[0].date, time: json.earnings[0].time };
+  }catch(e){
+    return { ok:false, reason:'เชื่อมต่อไม่ได้' };
+  }
+}
+
+function daysBetween(dateStr){
+  const target = new Date(dateStr+'T00:00:00');
+  const now = new Date();
+  now.setHours(0,0,0,0);
+  return Math.round((target-now)/(1000*60*60*24));
+}
+
+function renderEarningsGuidance(earn, a, symbol){
+  const el = document.getElementById('earningsCard');
+  const thisYear = new Date().getFullYear();
+
+  let earningsHtml = '';
+  if(earn.ok){
+    const earnYear = parseInt(earn.date.slice(0,4));
+    if(earnYear === thisYear){
+      const d = daysBetween(earn.date);
+      const timeLabel = earn.time === 'Pre Market' ? 'ก่อนตลาดเปิด' : earn.time === 'After Hours' ? 'หลังตลาดปิด' : 'ไม่ระบุเวลา';
+      earningsHtml = `
+        <div class="earnings-date-box">
+          <div>
+            <div class="d-num mono">${earn.date}</div>
+            <div class="d-label">${timeLabel} · ${d>=0? `อีก ${d} วัน` : `ผ่านมาแล้ว ${Math.abs(d)} วัน`}</div>
+          </div>
+        </div>`;
+    } else {
+      earningsHtml = `<p>ข้อมูลที่ดึงได้เป็นวันประกาศผลปี ${earnYear} ไม่ใช่ปี ${thisYear} — ระบบอาจยังไม่มีกำหนดการปีนี้ในฐานข้อมูล แนะนำเช็คแหล่งข้อมูลด้านล่างเพิ่มเติม</p>`;
+    }
+  } else {
+    earningsHtml = `<p><b>ดึงวันประกาศงบอัตโนมัติไม่ได้</b> (API key ฟรีของ Twelve Data ไม่รวมสิทธิ์ endpoint นี้ ต้องอัปเกรดแพ็กเกจ) ตรวจสอบวันประกาศงบของ ${symbol} ปี ${thisYear} ได้ฟรีที่
+        <a href="https://www.nasdaq.com/market-activity/stocks/${symbol.toLowerCase()}/earnings" target="_blank">nasdaq.com</a> หรือ
+        <a href="https://www.earningswhispers.com/stocks/${symbol.toLowerCase()}" target="_blank">earningswhispers.com</a></p>`;
+  }
+
+  let guidance = `<p><b>หลักคิดเรื่องจังหวะเข้าซื้อ</b> (ไม่ใช่คำแนะนำตายตัว — ใช้ประกอบการตัดสินใจ ไม่ใช่สัญญาณซื้อ):</p>`;
+  if(earn.ok && parseInt(earn.date.slice(0,4)) === thisYear){
+    const d = daysBetween(earn.date);
+    if(d >= 0 && d <= 10){
+      guidance += `<p>เหลืออีก ${d} วันก่อนประกาศผล — ช่วงนี้ราคามักแกว่งไม่แน่นอนก่อนงบออก ถ้าไม่ได้ตั้งใจเก็งกำไรรอบ earnings โดยเฉพาะ ควรรอให้ผ่านวันประกาศผลก่อน แล้วดูปฏิกิริยาราคา 2-5 วันหลังจากนั้นค่อยประเมินอีกที</p>`;
+    } else if(d < 0 && d >= -7){
+      guidance += `<p>เพิ่งผ่านวันประกาศผลมา ${Math.abs(d)} วัน — เป็นช่วงที่เหมาะประเมินมากกว่าก่อนหน้า เพราะเห็นแล้วว่าตลาดตอบรับผลงานอย่างไร ให้ดูประกอบกับทรงกราฟด้านล่างก่อนตัดสินใจ</p>`;
+    } else {
+      guidance += `<p>ตอนนี้อยู่ห่างจากวันประกาศผลพอสมควร ความเสี่ยงจาก earnings surprise ต่ำกว่าช่วงใกล้ประกาศ ให้ใช้ทรงกราฟและรูปแบบที่ตรวจพบด้านล่างเป็นหลักในการประเมิน</p>`;
+    }
+  } else {
+    guidance += `<p>เมื่อไม่มีวันที่แน่นอน ให้ยึดหลักทั่วไป: หลีกเลี่ยงเข้าไม้ใหญ่ในช่วง 1-2 สัปดาห์ก่อนวันที่คาดว่าจะประกาศผล (เช็คตามลิงก์ด้านบน) และรอดูปฏิกิริยาราคาหลังงบออก 2-5 วันก่อนตัดสินใจก้อนใหญ่</p>`;
+  }
+
+  if(a.trend === 'down' && !a.reversalUpSignal){
+    guidance += `<p>ผนวกกับทรงกราฟตอนนี้ที่ยังเป็น downtrend ไม่มีสัญญาณกลับตัว — แม้จะผ่านช่วง earnings ไปแล้ว ก็ยังไม่มีจุดที่ทางเทคนิคัลยืนยันว่าเหมาะเข้า ต้องรอสัญญาณกลับตัวร่วมด้วยเสมอ ไม่ใช่ดูแค่วันที่</p>`;
+  }
+
+  el.innerHTML = earningsHtml + guidance;
+}
 
 function buildAnalysis(bars, symbol, tf){
   const closes = bars.map(b=>b.close);
@@ -616,6 +700,10 @@ async function runAnalysis(symbolRaw){
     renderNarrative(a, symbol);
     const patterns = [...detectCandlePatterns(bars), ...detectStructurePatterns(bars)];
     renderPatterns(patterns);
+
+    const earn = await fetchNextEarnings(symbol, apiKey);
+    renderEarningsGuidance(earn, a, symbol);
+
     addRecent(symbol);
 
   }catch(err){
