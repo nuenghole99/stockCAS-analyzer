@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ตัววิเคราะห์กราฟหุ้น</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root{
+    --bg:#0f1410;
+    --surface:#171d18;
+    --surface-2:#1f2621;
+    --line:#2a332b;
+    --gold:#c9a24b;
+    --gold-dim:#8a723a;
+    --teal:#4fae9c;
+    --rust:#c1573f;
+    --ink:#e9e6db;
+    --ink-dim:#9aa397;
+    --ink-faint:#5c665c;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:radial-gradient(ellipse at top, rgba(201,162,75,0.06), transparent 55%), var(--bg);
+    color:var(--ink);
+    font-family:'Sarabun',sans-serif;
+    min-height:100vh;
+    padding-bottom:60px;
+  }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+
+  header{
+    padding:24px 20px 16px;
+    border-bottom:1px solid var(--line);
+    position:sticky; top:0; z-index:20;
+    background:rgba(15,20,16,0.95);
+    backdrop-filter:blur(6px);
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.18em;
+    color:var(--gold-dim); text-transform:uppercase; margin-bottom:6px;
+  }
+  h1{font-size:20px; font-weight:600; margin:0 0 12px; letter-spacing:-.01em;}
+
+  .search-row{display:flex; gap:8px; align-items:center;}
+  .ticker-input{
+    flex:1; background:var(--surface); border:1px solid var(--line); border-radius:3px;
+    color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600;
+    padding:10px 12px; text-transform:uppercase; letter-spacing:.03em;
+  }
+  .ticker-input:focus{outline:none; border-color:var(--gold-dim);}
+  .go-btn{
+    background:var(--gold); color:#14190f; border:none; border-radius:3px;
+    font-family:'Sarabun',sans-serif; font-weight:600; font-size:14px;
+    padding:10px 16px; cursor:pointer; flex-shrink:0;
+  }
+  .go-btn:active{opacity:.8;}
+  .gear-btn{
+    background:none; border:1px solid var(--line); border-radius:3px; color:var(--ink-dim);
+    font-size:16px; padding:9px 12px; cursor:pointer; flex-shrink:0;
+  }
+
+  .settings-panel{
+    display:none; margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:3px;
+    background:var(--surface-2);
+  }
+  .settings-panel.open{display:block;}
+  .settings-panel label{font-size:11px; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; display:block; margin-bottom:5px;}
+  .settings-panel input{
+    width:100%; background:var(--bg); border:1px solid var(--line); border-radius:3px;
+    color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:12.5px; padding:8px 10px; margin-bottom:8px;
+  }
+  .settings-panel .hint{font-size:11px; color:var(--ink-faint); line-height:1.6;}
+  .settings-panel .hint a{color:var(--gold);}
+
+  main{max-width:680px; margin:0 auto; padding:0 20px;}
+
+  .status-msg{
+    text-align:center; padding:40px 20px; color:var(--ink-faint); font-size:13px;
+  }
+  .status-msg.error{color:var(--rust);}
+
+  .quote-bar{
+    display:flex; align-items:baseline; gap:12px; margin-top:20px; flex-wrap:wrap;
+  }
+  .quote-sym{font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:700;}
+  .quote-price{font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:700;}
+  .quote-change{font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:600;}
+  .quote-change.up{color:var(--teal);}
+  .quote-change.down{color:var(--rust);}
+  .quote-time{font-size:11px; color:var(--ink-faint); width:100%;}
+
+  #chart{
+    margin-top:16px; border:1px solid var(--line); border-radius:4px; overflow:hidden;
+    background:var(--surface);
+  }
+
+  .legend{display:flex; gap:14px; margin-top:8px; flex-wrap:wrap;}
+  .legend-item{display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace;}
+  .legend-dot{width:10px; height:2px; border-radius:1px;}
+
+  .section-title{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.15em; text-transform:uppercase;
+    color:var(--gold-dim); margin:28px 0 10px; display:flex; align-items:center; gap:10px;
+  }
+  .section-title::after{content:''; flex:1; height:1px; background:var(--line);}
+
+  .analysis-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:16px;
+  }
+  .analysis-card p{margin:0 0 12px; font-size:14px; line-height:1.75;}
+  .analysis-card p:last-child{margin-bottom:0;}
+  .analysis-card b{color:var(--gold); font-weight:600;}
+  .analysis-card .term{color:var(--teal);}
+
+  .metric-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line);
+    border:1px solid var(--line); border-radius:4px; overflow:hidden; margin-top:16px;
+  }
+  .metric{background:var(--surface); padding:12px 14px;}
+  .metric-label{font-size:10.5px; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; margin-bottom:4px;}
+  .metric-value{font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600;}
+  .metric-value.up{color:var(--teal);}
+  .metric-value.down{color:var(--rust);}
+
+  .disclaimer{
+    margin-top:28px; padding:16px; border:1px solid var(--line); border-radius:4px;
+    background:var(--surface); font-size:11.5px; color:var(--ink-faint); line-height:1.7;
+  }
+  .disclaimer strong{color:var(--ink-dim);}
+
+  .footer-note{
+    text-align:center; font-size:10.5px; color:var(--ink-faint); margin-top:14px; font-family:'IBM Plex Mono',monospace;
+  }
+
+  .recent-syms{display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;}
+  .recent-syms button{
+    background:var(--surface); border:1px solid var(--line); color:var(--ink-dim);
+    font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 9px; border-radius:3px; cursor:pointer;
+  }
+  .recent-syms button:active{border-color:var(--gold-dim); color:var(--gold);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Technical Read · US Equities</div>
+  <h1>ตัววิเคราะห์กราฟหุ้น</h1>
+  <div class="search-row">
+    <input class="ticker-input" id="tickerInput" placeholder="เช่น SPCX, NVDA, SNDK" autocomplete="off">
+    <button class="go-btn" id="goBtn">ดูกราฟ</button>
+    <button class="gear-btn" id="gearBtn">⚙</button>
+  </div>
+  <div class="recent-syms" id="recentSyms"></div>
+  <div class="settings-panel" id="settingsPanel">
+    <label>Twelve Data API Key</label>
+    <input id="apiKeyInput" placeholder="วาง API key ที่นี่" autocomplete="off">
+    <div class="hint">
+      ต้องมี API key ฟรีจาก <a href="https://twelvedata.com/pricing" target="_blank">twelvedata.com</a> (สมัครฟรี ใช้ได้ 800 ครั้ง/วัน) — key จะถูกเก็บไว้ในเบราว์เซอร์ของคุณเท่านั้น ไม่ส่งไปที่ไหน
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="statusMsg" class="status-msg">ใส่ชื่อหุ้น (เช่น SPCX) แล้วกด "ดูกราฟ" เพื่อเริ่ม</div>
+
+  <div id="resultArea" style="display:none;">
+    <div class="quote-bar">
+      <div class="quote-sym mono" id="qSym">—</div>
+      <div class="quote-price mono" id="qPrice">—</div>
+      <div class="quote-change mono" id="qChange">—</div>
+      <div class="quote-time" id="qTime"></div>
+    </div>
+
+    <div id="chart"></div>
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot" style="background:#e0b84a"></span> EMA 10</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#4fae9c"></span> EMA 20</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#7a93c9"></span> EMA 50</div>
+    </div>
+
+    <div class="metric-grid" id="metricGrid"></div>
+
+    <div class="section-title">สิ่งที่เห็นในกราฟ</div>
+    <div class="analysis-card"><p id="obsText"></p></div>
+
+    <div class="section-title">สรุปทรงกราฟ</div>
+    <div class="analysis-card"><p id="summaryText"></p></div>
+
+    <div class="section-title">เรื่องราคาเข้าซื้อ</div>
+    <div class="analysis-card" id="entryCard"></div>
+
+    <div class="disclaimer">
+      <strong>ข้อควรทราบ:</strong> การวิเคราะห์นี้สร้างจากการคำนวณตามกฎเทคนิคัลอัตโนมัติ (เส้นค่าเฉลี่ย EMA, ระยะห่างจากจุดสูงสุด/ต่ำสุด, แนวโน้มปริมาณซื้อขาย) ไม่ใช่การวิเคราะห์โดยมนุษย์หรือ AI ที่เข้าใจบริบทข่าว/ปัจจัยพื้นฐานของบริษัท และไม่ใช่คำแนะนำการลงทุน ราคาหุ้นผันผวนได้จากปัจจัยที่กฎเหล่านี้ไม่ครอบคลุม (ข่าว, earnings, เหตุการณ์เฉพาะบริษัท) ควรใช้ประกอบการตัดสินใจร่วมกับข้อมูลอื่นเสมอ
+    </div>
+    <p class="footer-note">ข้อมูลราคาอาจดีเลย์เล็กน้อยตามข้อจำกัดของแหล่งข้อมูลฟรี</p>
+  </div>
+</main>
+
+<script>
+const RECENTS_KEY = 'analyzer_recents_v1';
+const APIKEY_KEY = 'analyzer_apikey_v1';
+let chart, candleSeries, ema10Series, ema20Series, ema50Series;
+
+function initChart(){
+  const el = document.getElementById('chart');
+  chart = LightweightCharts.createChart(el, {
+    height: 340,
+    layout: { background:{color:'transparent'}, textColor:'#9aa397', fontFamily:'IBM Plex Mono, monospace', fontSize:11 },
+    grid: { vertLines:{color:'#1f2621'}, horzLines:{color:'#1f2621'} },
+    rightPriceScale:{ borderColor:'#2a332b' },
+    timeScale:{ borderColor:'#2a332b' },
+    crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
+  });
+  candleSeries = chart.addCandlestickSeries({
+    upColor:'#4fae9c', downColor:'#c1573f', borderVisible:false,
+    wickUpColor:'#4fae9c', wickDownColor:'#c1573f'
+  });
+  ema10Series = chart.addLineSeries({ color:'#e0b84a', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+  ema20Series = chart.addLineSeries({ color:'#4fae9c', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+  ema50Series = chart.addLineSeries({ color:'#7a93c9', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+
+  new ResizeObserver(entries=>{
+    if(!entries.length) return;
+    chart.applyOptions({ width: entries[0].contentRect.width });
+  }).observe(el);
+}
+
+function ema(values, period){
+  const k = 2/(period+1);
+  const out = [];
+  let prev = null;
+  values.forEach((v,i)=>{
+    if(i < period-1){ out.push(null); return; }
+    if(prev === null){
+      const seed = values.slice(i-period+1, i+1).reduce((a,b)=>a+b,0)/period;
+      prev = seed;
+    } else {
+      prev = v*k + prev*(1-k);
+    }
+    out.push(prev);
+  });
+  return out;
+}
+
+function getRecents(){
+  try{ return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]'); }catch(e){ return []; }
+}
+function addRecent(sym){
+  let r = getRecents().filter(s=>s!==sym);
+  r.unshift(sym);
+  r = r.slice(0,6);
+  localStorage.setItem(RECENTS_KEY, JSON.stringify(r));
+  renderRecents();
+}
+function renderRecents(){
+  const el = document.getElementById('recentSyms');
+  el.innerHTML = getRecents().map(s=>`<button data-sym="${s}">${s}</button>`).join('');
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.getElementById('tickerInput').value = b.dataset.sym;
+      runAnalysis(b.dataset.sym);
+    });
+  });
+}
+
+function setStatus(msg, isError){
+  const el = document.getElementById('statusMsg');
+  el.style.display = 'block';
+  el.className = 'status-msg' + (isError?' error':'');
+  el.textContent = msg;
+  document.getElementById('resultArea').style.display = 'none';
+}
+
+async function fetchSeries(symbol, apiKey){
+  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=1day&outputsize=260&apikey=${apiKey}`;
+  const res = await fetch(url);
+  const json = await res.json();
+  if(json.status === 'error' || !json.values) throw new Error(json.message || 'หาสัญลักษณ์นี้ไม่พบ');
+  return json.values.slice().reverse().map(v=>({
+    time: v.datetime,
+    open: parseFloat(v.open), high: parseFloat(v.high), low: parseFloat(v.low), close: parseFloat(v.close),
+    volume: parseFloat(v.volume || 0)
+  }));
+}
+
+function pct(a,b){ return ((a-b)/b*100); }
+
+function buildAnalysis(bars, symbol){
+  const closes = bars.map(b=>b.close);
+  const vols = bars.map(b=>b.volume);
+  const last = bars[bars.length-1];
+  const prev = bars[bars.length-2];
+
+  const e10 = ema(closes,10), e20 = ema(closes,20), e50 = ema(closes,50);
+  const lastE10 = e10[e10.length-1], lastE20 = e20[e20.length-1], lastE50 = e50[e50.length-1];
+
+  const window = bars.slice(-252);
+  const high52 = Math.max(...window.map(b=>b.high));
+  const low52 = Math.min(...window.map(b=>b.low));
+  const fromHigh = pct(last.close, high52);
+  const fromLow = pct(last.close, low52);
+
+  const recentVol = vols.slice(-5).reduce((a,b)=>a+b,0)/5;
+  const priorVol = vols.slice(-25,-5).reduce((a,b)=>a+b,0)/20;
+  const volTrendUp = recentVol > priorVol * 1.1;
+  const volTrendDown = recentVol < priorVol * 0.9;
+
+  let trend = 'sideways';
+  if(lastE10 && lastE20 && lastE50){
+    if(last.close < lastE10 && lastE10 < lastE20 && lastE20 < lastE50) trend = 'down';
+    else if(last.close > lastE10 && lastE10 > lastE20 && lastE20 > lastE50) trend = 'up';
+  }
+
+  const bodyToday = last.close - last.open;
+  const bodyPrev = prev.close - prev.open;
+  const bullishEngulf = bodyToday > 0 && bodyPrev < 0 && last.close > prev.open && last.open < prev.close;
+  const bearishEngulf = bodyToday < 0 && bodyPrev > 0 && last.close < prev.open && last.open > prev.close;
+  const range = last.high - last.low;
+  const lowerWick = Math.min(last.open,last.close) - last.low;
+  const hammer = range > 0 && lowerWick > (Math.abs(bodyToday) * 2) && (last.close - last.low) > range*0.6;
+
+  const reversalUpSignal = bullishEngulf || hammer;
+  const reversalDownSignal = bearishEngulf;
+
+  const changePct = pct(last.close, prev.close);
+
+  return {
+    last, prev, lastE10, lastE20, lastE50, high52, low52, fromHigh, fromLow,
+    volTrendUp, volTrendDown, trend, reversalUpSignal, reversalDownSignal, changePct,
+    e10, e20, e50
+  };
+}
+
+function fmt(n, d){ return n.toLocaleString('en-US', {minimumFractionDigits:d===undefined?2:d, maximumFractionDigits:d===undefined?2:d}); }
+
+function renderNarrative(a, symbol){
+  const trendTh = a.trend === 'down' ? 'ขาลง (downtrend)' : a.trend === 'up' ? 'ขาขึ้น (uptrend)' : 'ไซด์เวย์/ยังไม่ชัดเจน (sideways)';
+
+  let obs = `ราคาปิดล่าสุดของ <b>${symbol}</b> อยู่ที่ <b>${fmt(a.last.close)}</b> ดอลลาร์ `;
+  obs += a.changePct >= 0 ? `บวก ${fmt(a.changePct)}% จากวันก่อน ` : `ลบ ${fmt(Math.abs(a.changePct))}% จากวันก่อน `;
+  obs += `ห่างจากจุดสูงสุดในรอบปีที่ผ่านมา (${fmt(a.high52)}) อยู่ <b>${fmt(Math.abs(a.fromHigh))}%</b>`;
+  obs += a.fromHigh < -3 ? ' ซึ่งถือว่าห่างค่อนข้างมาก ' : ' ';
+  obs += `เส้นค่าเฉลี่ย <span class="term">EMA</span> ระยะสั้น-กลาง-ยาว (10/20/50 วัน) `;
+  if(a.trend === 'down') obs += 'เรียงตัวแบบราคาต่ำกว่าเส้นทุกเส้น และเส้นสั้นอยู่ต่ำกว่าเส้นยาว บ่งชี้แรงขายยังควบคุมทิศทางอยู่ ';
+  else if(a.trend === 'up') obs += 'เรียงตัวแบบราคาสูงกว่าเส้นทุกเส้น และเส้นสั้นอยู่เหนือเส้นยาว บ่งชี้แรงซื้อยังควบคุมทิศทางอยู่ ';
+  else obs += 'ยังเรียงตัวไม่ชัดเจน ราคาแกว่งอยู่ใกล้เส้นค่าเฉลี่ยหลายเส้น ';
+  obs += `ปริมาณการซื้อขาย 5 วันล่าสุดเทียบกับก่อนหน้า ${a.volTrendUp ? 'เพิ่มขึ้นชัดเจน' : a.volTrendDown ? 'ลดลงต่อเนื่อง' : 'ใกล้เคียงเดิม'} `;
+  if(a.reversalUpSignal) obs += '— และแท่งล่าสุดมีลักษณะแท่งเทียนกลับตัวเชิงบวก (bullish reversal candle) ให้เห็น ';
+  if(a.reversalDownSignal) obs += '— และแท่งล่าสุดมีลักษณะแท่งเทียนกลับตัวเชิงลบ (bearish reversal candle) ให้เห็น ';
+  document.getElementById('obsText').innerHTML = obs;
+
+  let summary = '';
+  if(a.trend === 'down'){
+    summary = a.reversalUpSignal
+      ? `ทรงกราฟยังอยู่ในช่วงขาลง แต่เริ่มมีสัญญาณกลับตัวเบื้องต้นให้เห็น (แท่งเทียน${a.volTrendUp?' พร้อมปริมาณสนับสนุน':''}) ยังต้องรอการยืนยันเพิ่มก่อนสรุปว่ากลับตัวจริง`
+      : `เป็น <b>downtrend ต่อเนื่องแบบไม่มีสัญญาณกลับตัว</b> ยังไม่มีจุดไหนในกราฟล่าสุดที่แสดงว่าแรงขายเริ่มหมด`;
+  } else if(a.trend === 'up'){
+    summary = a.reversalDownSignal
+      ? `ทรงกราฟยังอยู่ในช่วงขาขึ้น แต่เริ่มมีสัญญาณอ่อนแรงระยะสั้นให้เห็น ควรจับตาว่าจะพักฐานหรือกลับตัว`
+      : `เป็น <b>uptrend ต่อเนื่อง</b> ราคายืนเหนือเส้นค่าเฉลี่ยทุกเส้น ยังไม่มีสัญญาณอ่อนแรงชัดเจน`;
+  } else {
+    summary = `ทรงกราฟยังอยู่ในช่วง<b>สะสม/ไม่มีทิศทางชัดเจน</b> เส้นค่าเฉลี่ยยังไม่เรียงตัวเป็นระเบียบ ต้องรอราคาเลือกทางก่อน`;
+  }
+  document.getElementById('summaryText').innerHTML = summary;
+
+  const entryCard = document.getElementById('entryCard');
+  if(a.trend === 'down' && !a.reversalUpSignal){
+    entryCard.innerHTML = `
+      <p>ด้วยทรงกราฟตอนนี้ <b>ยังไม่มีจุดที่ยืนยันได้ทางเทคนิคัลว่าเหมาะเข้าซื้อ</b> เพราะไม่มีแนวรับ (support) ที่ผ่านการทดสอบแล้ว การเข้าซื้อตอนนี้เท่ากับสวนเทรนด์ที่ยังไม่กลับตัว</p>
+      <p>สัญญาณที่ควรรอก่อนพิจารณาเข้า:</p>
+      <p>1) แท่งเทียนกลับตัวชัดเจนพร้อมปริมาณเพิ่มขึ้น<br>
+      2) ราคาเริ่มแกว่งเป็นกรอบแคบ ไม่ทำจุดต่ำใหม่ต่อเนื่อง<br>
+      3) ราคายืนเหนือ EMA 10 วัน (${fmt(a.lastE10)}) ได้อย่างน้อย 2-3 วันติด<br>
+      4) ตรวจสอบวันประกาศผลประกอบการ (earnings) ที่จะถึงด้วยตัวเองก่อนตัดสินใจ</p>`;
+  } else if(a.trend === 'down' && a.reversalUpSignal){
+    entryCard.innerHTML = `
+      <p>เริ่มมีสัญญาณกลับตัวเบื้องต้น แต่ยังอยู่ใน downtrend หลัก ถ้าจะพิจารณาเข้าควรใช้เงินก้อนเล็ก (starter position) และรอดูว่าราคายืนเหนือ EMA 10 วัน (${fmt(a.lastE10)}) ได้ต่อเนื่องก่อนเพิ่มไม้ ตั้ง stop loss ไว้ใต้จุดต่ำของแท่งสัญญาณกลับตัว</p>`;
+  } else if(a.trend === 'up'){
+    entryCard.innerHTML = `
+      <p>อยู่ใน uptrend ที่ยังแข็งแรง จุดที่มักใช้พิจารณา (ไม่ใช่คำแนะนำตายตัว) คือรอราคาย่อกลับมาใกล้ EMA 20 วัน (${fmt(a.lastE20)}) แทนการไล่ซื้อตอนราคาวิ่งไกลจากเส้นค่าเฉลี่ยมากเกินไป และควรตั้ง stop loss ใต้ EMA 50 วัน (${fmt(a.lastE50)})</p>`;
+  } else {
+    entryCard.innerHTML = `
+      <p>ทรงกราฟยังไม่มีทิศทางชัดเจนพอจะประเมิน ควรรอราคาเลือกทาง (breakout จากกรอบ หรือหลุดกรอบลง) ก่อนตัดสินใจ</p>`;
+  }
+}
+
+function renderMetrics(a){
+  const items = [
+    { label:'EMA 10', value: fmt(a.lastE10) },
+    { label:'EMA 20', value: fmt(a.lastE20) },
+    { label:'EMA 50', value: fmt(a.lastE50) },
+    { label:'จุดสูงสุด 52 สัปดาห์', value: fmt(a.high52) },
+    { label:'จุดต่ำสุด 52 สัปดาห์', value: fmt(a.low52) },
+    { label:'ห่างจากจุดสูงสุด', value: (a.fromHigh>=0?'+':'')+fmt(a.fromHigh)+'%', cls: a.fromHigh>=0?'up':'down' },
+  ];
+  document.getElementById('metricGrid').innerHTML = items.map(it=>`
+    <div class="metric">
+      <div class="metric-label">${it.label}</div>
+      <div class="metric-value ${it.cls||''} mono">${it.value}</div>
+    </div>`).join('');
+}
+
+async function runAnalysis(symbolRaw){
+  const symbol = symbolRaw.trim().toUpperCase();
+  if(!symbol) return;
+  const apiKey = localStorage.getItem(APIKEY_KEY) || document.getElementById('apiKeyInput').value.trim();
+  if(!apiKey){
+    setStatus('ยังไม่ได้ใส่ API Key — กดปุ่ม ⚙ ด้านบนเพื่อตั้งค่าก่อน (ฟรีจาก twelvedata.com)', true);
+    return;
+  }
+  setStatus(`กำลังดึงข้อมูล ${symbol}...`);
+  try{
+    const bars = await fetchSeries(symbol, apiKey);
+    if(bars.length < 55) throw new Error('ข้อมูลย้อนหลังไม่พอสำหรับคำนวณ');
+
+    document.getElementById('statusMsg').style.display = 'none';
+    document.getElementById('resultArea').style.display = 'block';
+
+    if(!chart) initChart();
+    candleSeries.setData(bars.map(b=>({ time:b.time, open:b.open, high:b.high, low:b.low, close:b.close })));
+
+    const closes = bars.map(b=>b.close);
+    const e10 = ema(closes,10), e20 = ema(closes,20), e50 = ema(closes,50);
+    ema10Series.setData(bars.map((b,i)=>e10[i]!==null?{time:b.time, value:e10[i]}:null).filter(Boolean));
+    ema20Series.setData(bars.map((b,i)=>e20[i]!==null?{time:b.time, value:e20[i]}:null).filter(Boolean));
+    ema50Series.setData(bars.map((b,i)=>e50[i]!==null?{time:b.time, value:e50[i]}:null).filter(Boolean));
+    chart.timeScale().fitContent();
+
+    const last = bars[bars.length-1];
+    document.getElementById('qSym').textContent = symbol;
+    document.getElementById('qPrice').textContent = fmt(last.close);
+    const chg = pct(last.close, bars[bars.length-2].close);
+    const chgEl = document.getElementById('qChange');
+    chgEl.textContent = (chg>=0?'+':'')+fmt(chg)+'%';
+    chgEl.className = 'quote-change mono ' + (chg>=0?'up':'down');
+    document.getElementById('qTime').textContent = 'ข้อมูลล่าสุด: ' + last.time;
+
+    const a = buildAnalysis(bars, symbol);
+    renderMetrics(a);
+    renderNarrative(a, symbol);
+    addRecent(symbol);
+
+  }catch(err){
+    setStatus('เกิดข้อผิดพลาด: ' + err.message, true);
+  }
+}
+
+document.getElementById('goBtn').addEventListener('click', ()=>runAnalysis(document.getElementById('tickerInput').value));
+document.getElementById('tickerInput').addEventListener('keydown', e=>{ if(e.key==='Enter') runAnalysis(e.target.value); });
+document.getElementById('gearBtn').addEventListener('click', ()=>{
+  document.getElementById('settingsPanel').classList.toggle('open');
+});
+document.getElementById('apiKeyInput').addEventListener('change', e=>{
+  localStorage.setItem(APIKEY_KEY, e.target.value.trim());
+});
+
+const savedKey = localStorage.getItem(APIKEY_KEY);
+if(savedKey) document.getElementById('apiKeyInput').value = savedKey;
+else document.getElementById('settingsPanel').classList.add('open');
+
+renderRecents();
+</script>
+
+</body>
+</html>
